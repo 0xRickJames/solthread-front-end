@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SolThreads - Solana Discord Verification",
+  title: "SolThread - Solana Discord Verification",
   description: "Verify your Solana wallet ownership and get roles on Discord",
 };
 
