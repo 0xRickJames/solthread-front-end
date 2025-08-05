@@ -107,6 +107,7 @@ export default function VerifyPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6">
       <h1 className="text-3xl font-bold mb-2">Verify Your Wallet</h1>
+      <h1 className="text-3xl font-bold mb-2">For OmniPair Discord</h1>
       <p className="mb-6 text-gray-400">
         Discord ID: {discordId || "Not provided"}
       </p>

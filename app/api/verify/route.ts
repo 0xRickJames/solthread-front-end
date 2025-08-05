@@ -108,6 +108,6 @@ export async function POST(req: NextRequest) {
   // Return success for frontend modal
   return NextResponse.json({
     success: true,
-    message: `Verified! Roles assigned: ${roles.join(", ")}`,
+    message: `Verified! Roles(s) assigned!`,
   });
 }
