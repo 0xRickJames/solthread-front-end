@@ -3,12 +3,18 @@
 import { useState, useEffect } from "react";
 import bs58 from "bs58";
 import axios from "axios";
+import { PublicKey } from "@solana/web3.js";
 
-type WalletProvider = "phantom" | "solflare";
+type WalletProvider = "phantom" | "solflare" | "backpack";
+
+interface ProviderState {
+  type: WalletProvider;
+  adapter: any;
+}
 
 export default function VerifyPage() {
   const [wallet, setWallet] = useState<string | null>(null);
-  const [provider, setProvider] = useState<any>(null);
+  const [provider, setProvider] = useState<ProviderState | null>(null);
   const [nonce, setNonce] = useState("");
   const [discordId, setDiscordId] = useState("");
 
@@ -45,12 +51,16 @@ export default function VerifyPage() {
 
   function selectProvider(type: WalletProvider) {
     const w = window as any;
+
     if (type === "phantom" && w.phantom?.solana?.isPhantom) {
-      setProvider(w.phantom.solana);
+      setProvider({ type, adapter: w.phantom.solana });
       showToast("Phantom wallet selected.", "info");
     } else if (type === "solflare" && w.solflare?.isSolflare) {
-      setProvider(w.solflare);
+      setProvider({ type, adapter: w.solflare });
       showToast("Solflare wallet selected.", "info");
+    } else if (type === "backpack" && w.backpack?.solana?.isBackpack) {
+      setProvider({ type, adapter: w.backpack.solana });
+      showToast("Backpack wallet selected.", "info");
     } else {
       showToast(`${type} wallet not found!`, "error");
     }
@@ -58,14 +68,28 @@ export default function VerifyPage() {
 
   async function connectWallet() {
     if (!provider) return;
+
     try {
-      const resp = await provider.connect();
-      setWallet(resp.publicKey.toString());
-      showToast(
-        `Wallet connected: ${resp.publicKey.toString().slice(0, 6)}...`,
-        "success"
-      );
-    } catch {
+      let publicKey: string | null = null;
+
+      if (provider.type === "phantom") {
+        const resp = await provider.adapter.connect();
+        publicKey = resp.publicKey.toBase58();
+      } else if (provider.type === "solflare") {
+        await provider.adapter.connect();
+        publicKey = provider.adapter.publicKey.toBase58();
+      } else if (provider.type === "backpack") {
+        const resp = await provider.adapter.connect();
+        // Backpack returns Uint8Array
+        publicKey = new PublicKey(resp.publicKey).toBase58();
+      }
+
+      if (!publicKey) throw new Error("No public key found");
+
+      setWallet(publicKey);
+      showToast(`Wallet connected: ${publicKey.slice(0, 6)}...`, "success");
+    } catch (err) {
+      console.error(err);
       showToast("Failed to connect wallet.", "error");
     }
   }
@@ -76,13 +100,27 @@ export default function VerifyPage() {
 
     try {
       const message = new TextEncoder().encode(nonce);
-      const signed = await provider.signMessage(message, "utf8");
+
+      const rawSig = await provider.adapter.signMessage(
+        provider.type === "backpack" ? message : message,
+        provider.type === "backpack" ? undefined : "utf8"
+      );
+
+      // Normalize signature to Uint8Array
+      const signatureBytes =
+        rawSig instanceof Uint8Array
+          ? rawSig
+          : rawSig.signature instanceof Uint8Array
+          ? rawSig.signature
+          : (() => {
+              throw new Error("Unknown signature format from wallet");
+            })();
 
       const res = await axios.post("/api/verify", {
         discordId,
         wallet,
         nonce,
-        signature: bs58.encode(signed.signature),
+        signature: bs58.encode(signatureBytes),
       });
 
       console.log("Verify API Response:", res.data);
@@ -113,7 +151,7 @@ export default function VerifyPage() {
       </p>
 
       {!provider && (
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4 justify-center">
           <button
             onClick={() => selectProvider("phantom")}
             className="px-6 py-3 bg-purple-600 rounded-xl font-semibold hover:scale-105 hover:bg-purple-500 transition-transform"
@@ -125,6 +163,12 @@ export default function VerifyPage() {
             className="px-6 py-3 bg-orange-500 rounded-xl font-semibold hover:scale-105 hover:bg-orange-400 transition-transform"
           >
             Connect Solflare
+          </button>
+          <button
+            onClick={() => selectProvider("backpack")}
+            className="px-6 py-3 bg-yellow-500 rounded-xl font-semibold hover:scale-105 hover:bg-yellow-400 transition-transform"
+          >
+            Connect Backpack
           </button>
         </div>
       )}
@@ -147,7 +191,7 @@ export default function VerifyPage() {
         </button>
       )}
 
-      {/* Toast Notifications */}
+      {/* Toasts */}
       <div className="fixed bottom-5 right-5 space-y-2 z-50">
         {toasts.map((toast) => (
           <div
@@ -166,7 +210,7 @@ export default function VerifyPage() {
         ))}
       </div>
 
-      {/* Modal for verification */}
+      {/* Modal */}
       {modal.show && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
           <div
