@@ -61,39 +61,56 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
 
-  // Check for duplicates
+  // Find existing verification
   const existing = await verifications.findOne({ discordId });
-  if (existing) {
+
+  // Initialize wallet array
+  let wallets: string[] = existing?.wallets || [];
+
+  // Add new wallet if not already stored
+  if (!wallets.includes(wallet)) {
+    wallets.push(wallet);
+  }
+
+  // Fetch total OMFG across all wallets
+  let totalBalance = 0;
+  for (const w of wallets) {
+    totalBalance += await getTokenBalance(w);
+  }
+
+  console.log(
+    `User ${discordId} total balance: ${totalBalance} OMFG across ${wallets.length} wallet(s)`
+  );
+
+  if (totalBalance <= 0) {
     return NextResponse.json({
-      success: true,
-      message: "Already verified. Roles should already be assigned.",
+      success: false,
+      message: "No tokens detected in any wallet",
     });
   }
 
-  // Get token balance
-  const balance = await getTokenBalance(wallet);
-  console.log(`Wallet ${wallet} balance: ${balance}`);
-
-  if (balance <= 0) {
-    return NextResponse.json({ success: false, message: "No tokens detected" });
-  }
-
-  // Determine roles (exclusive tiers + any)
+  // Determine roles (cumulative)
   const roles: string[] = [ROLE_ANY];
-  if (balance >= 100_000) roles.push(ROLE_100K);
-  if (balance >= 10_000) roles.push(ROLE_10K);
-  if (balance >= 1_000) roles.push(ROLE_1K);
+  if (totalBalance >= 1_000) roles.push(ROLE_1K);
+  if (totalBalance >= 10_000) roles.push(ROLE_10K);
+  if (totalBalance >= 100_000) roles.push(ROLE_100K);
 
-  // Save verification
-  await verifications.insertOne({
-    discordId,
-    wallet,
-    roles,
-    balance,
-    verifiedAt: new Date(),
-  });
+  // Update DB
+  await verifications.updateOne(
+    { discordId },
+    {
+      $set: {
+        discordId,
+        wallets,
+        totalBalance,
+        roles,
+        verifiedAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
 
-  // Notify bot server
+  // Notify bot webhook
   try {
     console.log("Posting to bot webhook:", WEBHOOK_URL, roles);
     await axios.post(WEBHOOK_URL, {
@@ -105,9 +122,10 @@ export async function POST(req: NextRequest) {
     console.error("Failed to post to webhook:", err?.message || err);
   }
 
-  // Return success for frontend modal
   return NextResponse.json({
     success: true,
-    message: `Verified! Roles(s) assigned!`,
+    message: `Verified! Total: ${totalBalance} OMFG. Roles assigned: ${roles.join(
+      ", "
+    )}.`,
   });
 }
