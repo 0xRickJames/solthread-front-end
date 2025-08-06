@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
   // Determine roles (exclusive tiers + any)
   const roles: string[] = [ROLE_ANY];
   if (balance >= 100_000) roles.push(ROLE_100K);
-  else if (balance >= 10_000) roles.push(ROLE_10K);
-  else if (balance >= 1_000) roles.push(ROLE_1K);
+  if (balance >= 10_000) roles.push(ROLE_10K);
+  if (balance >= 1_000) roles.push(ROLE_1K);
 
   // Save verification
   await verifications.insertOne({
